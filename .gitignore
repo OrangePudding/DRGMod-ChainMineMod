@@ -7,3 +7,6 @@ ue4ss.lib
 main.obj
 main.exp
 main.lib
+
+# release packages
+*.zip
