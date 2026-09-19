@@ -7,14 +7,14 @@ Enabled = true
 # 模式：Dig = 逐帧挖空整条矿脉（默认）；Spline = 一条样条一次刻空（实验）
 Mode = Dig
 
-# 探测网格步长（厘米，45=0.45米），越小覆盖越全
-VeinStep = 45
+# 探测网格步长（厘米，32=0.32米），越小覆盖越全
+VeinStep = 32
 
 # 单次挥镐最多探测的矿脉格数（0=关闭连锁）
-MaxNodes = 250
+MaxNodes = 2000
 
-# 距命中点的最大连锁距离（厘米，1200=12米）
-MaxDistance = 1200
+# 距命中点的最大连锁距离（厘米，3000=30米）
+MaxDistance = 3000
 
 # 探测射线长度（厘米），需大于矿脉半径
 ProbeRayDist = 350
@@ -32,10 +32,10 @@ MaxSplineRadius = 220
 AlsoSpecial = true
 
 # 进别人房（客机）是否也连锁，仅 Dig 模式
-EnableAsClient = false
+EnableAsClient = true
 
 # 射线过滤器：0=Any 1=Empty 2=Filled 3=Diggable 4=NotDiggable
 RaycastFilter = 3
 
 # 连锁挖掘间隔（毫秒）：卡顿调大，太慢调小
-FireIntervalMs = 16
+FireIntervalMs = 32

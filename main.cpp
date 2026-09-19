@@ -138,17 +138,17 @@ namespace ChainMine
     // ---- config (read/written on the game thread only) ----
     static bool g_cfg_enabled = true;
     static int32_t g_cfg_mode = 0;             // 0 = Dig (lattice digs), 1 = Spline (one carve op)
-    static double g_cfg_vein_step = 45.0;      // probe grid step (UE cm; 45 = 0.45 m)
-    static int32_t g_cfg_max_nodes = 250;      // max probed vein cells per swing (also key MaxNodes)
-    static double g_cfg_max_distance = 1200.0; // max distance from hit point (UE cm; 1200 = 12 m)
+    static double g_cfg_vein_step = 32.0;      // probe grid step (UE cm; 32 = 0.32 m)
+    static int32_t g_cfg_max_nodes = 2000;     // max probed vein cells per swing (also key MaxNodes)
+    static double g_cfg_max_distance = 3000.0; // max distance from hit point (UE cm; 3000 = 30 m)
     static bool g_cfg_also_special = true;     // chain also on power attacks
-    static bool g_cfg_enable_as_client = false;// allow chaining while joining someone else's game (Dig only)
+    static bool g_cfg_enable_as_client = true; // allow chaining while joining someone else's game (Dig only)
     static int32_t g_cfg_raycast_filter = 3;   // ELandscapeCellFilter: 0 Any 1 Empty 2 Filled 3 Diggable ...
     static double g_cfg_probe_ray_dist = 350.0;  // probe ray length (UE cm; must exceed vein half-thickness)
     static double g_cfg_dig_radius = 115.0;      // pickaxe DigSize (UE cm; crater is a voxelized cube, half-width = DigSize/2)
     static double g_cfg_tube_margin = 60.0;      // spline: extra radius/length beyond vein extent (UE cm)
     static double g_cfg_max_spline_radius = 220.0; // spline safety cap: fitted tube radius upper bound (UE cm)
-    static int32_t g_cfg_fire_interval_ms = 16;// min ms between deferred chain digs
+    static int32_t g_cfg_fire_interval_ms = 32;// min ms between deferred chain digs
     static ULONGLONG g_cfg_check_tick = 0;
     static bool g_cfg_had_file = false;
     static uint64_t g_cfg_last_write = 0;
@@ -363,14 +363,14 @@ namespace ChainMine
             L"# 模式：Dig = 逐帧挖空整条矿脉（默认）；Spline = 一条样条一次刻空（实验）\n"
             L"Mode = Dig\n"
             L"\n"
-            L"# 探测网格步长（厘米，45=0.45米），越小覆盖越全\n"
-            L"VeinStep = 45\n"
+            L"# 探测网格步长（厘米，32=0.32米），越小覆盖越全\n"
+            L"VeinStep = 32\n"
             L"\n"
             L"# 单次挥镐最多探测的矿脉格数（0=关闭连锁）\n"
-            L"MaxNodes = 250\n"
+            L"MaxNodes = 2000\n"
             L"\n"
-            L"# 距命中点的最大连锁距离（厘米，1200=12米）\n"
-            L"MaxDistance = 1200\n"
+            L"# 距命中点的最大连锁距离（厘米，3000=30米）\n"
+            L"MaxDistance = 3000\n"
             L"\n"
             L"# 探测射线长度（厘米），需大于矿脉半径\n"
             L"ProbeRayDist = 350\n"
@@ -388,13 +388,13 @@ namespace ChainMine
             L"AlsoSpecial = true\n"
             L"\n"
             L"# 进别人房（客机）是否也连锁，仅 Dig 模式\n"
-            L"EnableAsClient = false\n"
+            L"EnableAsClient = true\n"
             L"\n"
             L"# 射线过滤器：0=Any 1=Empty 2=Filled 3=Diggable 4=NotDiggable\n"
             L"RaycastFilter = 3\n"
             L"\n"
             L"# 连锁挖掘间隔（毫秒）：卡顿调大，太慢调小\n"
-            L"FireIntervalMs = 16\n";
+            L"FireIntervalMs = 32\n";
         std::wstring ws = txt;
         std::string utf8 = WideToUtf8(ws);
         FILE* f = nullptr;
@@ -1382,9 +1382,9 @@ namespace ChainMine
         UWorld* world = ctx->GetWorld();
         if (!world) return;
 
-        // Host-only by default. As a client in someone else's game the chain
-        // is disabled unless EnableAsClient=true (client chains re-enter the
-        // Server_DigBlock RPC, Dig mode only; Spline needs authority).
+        // Client chaining (EnableAsClient, on by default) re-enters the
+        // Server_DigBlock RPC from the client, Dig mode only; Spline needs
+        // authority and stays host-only.
         bool isAuthority = true;
         if (void* rolePtr = ctx->GetValuePtrByPropertyNameInChain(L"Role"))
         {
@@ -1684,7 +1684,7 @@ namespace ChainMine
         MyMod()
         {
             ModName = L"Sakura_CPP_ChainMine";
-            ModVersion = L"1.1";
+            ModVersion = L"1.2";
             ModDescription = L"Chain mining: probe whole ore vein, optimal digs (or spline carve), host side";
             ModAuthors = L"Sakura";
             InitLogPath();

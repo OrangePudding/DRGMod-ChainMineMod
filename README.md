@@ -20,7 +20,7 @@
 
 ## 单位说明（重要）
 DRG 的地形坐标/半径是 **UE 默认厘米制**（1米=100）。实测镐洞尺寸 `DigSize=115.0`
-（115cm ≈ 1.15m）。配置里 `VeinStep=45` 即 0.45m，`MaxDistance=1200` 即 12m。
+（115cm ≈ 1.15m）。配置里 `VeinStep=32` 即 0.32m，`MaxDistance=3000` 即 30m。
 
 ## 工作原理
 1. 在全局 `ProcessEvent` pre-callback 里按 UFunction 指针精确识别
@@ -46,9 +46,9 @@ DRG 的地形坐标/半径是 **UE 默认厘米制**（1米=100）。实测镐�
 ## 多人行为
 - **别人来你房（你是主机/单机）**：连锁逻辑全在主机侧执行（谁挥镐都走 `Server_DigBlock`
   → 主机钩子），所以**全队都享受效果**，客机不用装任何东西；Dig 和 Spline 模式都生效。
-- **你去别人房（你是客机）**：默认关闭（`EnableAsClient=false`），就是正常挖矿；想要也连锁
-  就把 `EnableAsClient=true`——客机会本地探测并反复发送 `Server_DigBlock` RPC（Dig 模式），
-  Spline 模式是 NetMulticast、只能在主机调用，客机自动退回 Dig。
+- **你去别人房（你是客机）**：默认开启（`EnableAsClient=true`）——客机会本地探测并反复
+  发送 `Server_DigBlock` RPC（Dig 模式），Spline 模式是 NetMulticast、只能在主机调用，
+  客机自动退回 Dig；不想要连锁就改成 `false`，即恢复正常挖矿。
 - 注意：UE4SS 注入属于 modded 客户端，是否能进别人房还取决于对方房间的 mod 状态设置。
 
 ## 安装
@@ -63,17 +63,17 @@ DRG 的地形坐标/半径是 **UE 默认厘米制**（1米=100）。实测镐�
 |---|---|---|
 | Enabled | true | 总开关 |
 | Mode | Dig | `Dig`=逐帧挖空整条矿脉；`Spline`=一条样条一次刻空（实验） |
-| VeinStep | 45 | 探测网格步长（厘米，45=0.45m），越小覆盖越全 |
-| MaxNodes | 250 | 单次挥镐最多探测的矿脉格数（0=关闭连锁） |
-| MaxDistance | 1200 | 距命中点最大连锁距离（厘米，1200=12m） |
+| VeinStep | 32 | 探测网格步长（厘米，32=0.32m），越小覆盖越全 |
+| MaxNodes | 2000 | 单次挥镐最多探测的矿脉格数（0=关闭连锁） |
+| MaxDistance | 3000 | 距命中点最大连锁距离（厘米，3000=30m） |
 | ProbeRayDist | 350 | 探测射线长度（厘米），需大于矿脉半径 |
 | DigRadius | 115 | 镐洞尺寸（厘米），游戏默认 115 |
 | TubeMargin | 60 | Spline 模式样条余量（厘米） |
 | MaxSplineRadius | 220 | Spline 模式样条半径上限（厘米），防止挖出超大洞 |
 | AlsoSpecial | true | 重击（Power Attack）是否也触发连锁 |
-| EnableAsClient | false | 进别人房（客机）是否也连锁；仅 Dig 模式 |
+| EnableAsClient | true | 进别人房（客机）是否也连锁；仅 Dig 模式 |
 | RaycastFilter | 3 | 0 Any / 1 Empty / 2 Filled / 3 Diggable / 4 NotDiggable |
-| FireIntervalMs | 16 | 连锁挖掘间隔（毫秒）：卡顿调大，太慢调小 |
+| FireIntervalMs | 32 | 连锁挖掘间隔（毫秒）：卡顿调大，太慢调小 |
 
 ## 日志
 `chainmine.log`（mod 目录，每次启动清空）。预期（Dig 模式）：
@@ -84,8 +84,8 @@ hook: IsPointInsideTerrain ready (pos=0 ret=12)
 hook: RemoveDebrisInSphere ready (pos=0 radius=12 fragile=16 durable=17 type=18)
 hook: spline carve ready (param=0 opNum=0 segs=8 mat=24 filter=32 precious=33)
 chain: all hooks ready (raycast=1)
-probe: mat=203 cells=250 visited=158 skipped=93 step=45.0 maxDist=1200.0
-chain: enqueue ore=TM_Nitra idx=203 cells=250 digs=16 queue=16
+probe: mat=203 cells=2000 visited=158 skipped=93 step=32.0 maxDist=3000.0
+chain: enqueue ore=TM_Nitra idx=203 cells=2000 digs=16 queue=16
 chain: done fired=16
 ```
 - 正常表现：`probe:` 的 cells 数量应接近矿脉体积/步长³（含半步长加密点）；`digs` 明显
