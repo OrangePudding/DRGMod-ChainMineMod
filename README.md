@@ -62,50 +62,41 @@ DRG 的地形坐标/半径是 **UE 默认厘米制**（1米=100）。实测镐�
 | 键 | 默认 | 说明 |
 |---|---|---|
 | Enabled | true | 总开关 |
-| Mode | Dig | `Dig`=最优挖点逐帧崩；`Spline`=一条雕刻样条一次刻空（实验） |
-| VeinStep | 45 | 探测网格步长（UE 厘米；45=0.45m）。越小覆盖越全、射线越多 |
-| MaxNodes | 250 | 单次挥镐最多探测矿脉细胞数（0 关；大脉/黄金潮可调高） |
-| MaxDistance | 1200 | 距命中点最大连锁距离（UE 厘米；1200=12m） |
-| ProbeRayDist | 350 | 探测射线长度（UE 厘米；需大于矿脉半径） |
-| DigRadius | 115 | 镐洞尺寸（UE 厘米；游戏默认 DigSize=115，实际坑是体素化方块；覆盖判定按 half=DigRadius/2 的盒子） |
-| TubeMargin | 60 | Spline 模式半径/长度余量（UE 厘米） |
-| MaxSplineRadius | 220 | Spline 模式样条半径上限（UE 厘米；防探测异常挖出超大洞） |
+| Mode | Dig | `Dig`=逐帧挖空整条矿脉；`Spline`=一条样条一次刻空（实验） |
+| VeinStep | 45 | 探测网格步长（厘米，45=0.45m），越小覆盖越全 |
+| MaxNodes | 250 | 单次挥镐最多探测的矿脉格数（0=关闭连锁） |
+| MaxDistance | 1200 | 距命中点最大连锁距离（厘米，1200=12m） |
+| ProbeRayDist | 350 | 探测射线长度（厘米），需大于矿脉半径 |
+| DigRadius | 115 | 镐洞尺寸（厘米），游戏默认 115 |
+| TubeMargin | 60 | Spline 模式样条余量（厘米） |
+| MaxSplineRadius | 220 | Spline 模式样条半径上限（厘米），防止挖出超大洞 |
 | AlsoSpecial | true | 重击（Power Attack）是否也触发连锁 |
-| EnableAsClient | false | 客机（进别人房）是否也连锁；仅 Dig 模式，Spline 需主机 |
+| EnableAsClient | false | 进别人房（客机）是否也连锁；仅 Dig 模式 |
 | RaycastFilter | 3 | 0 Any / 1 Empty / 2 Filled / 3 Diggable / 4 NotDiggable |
-| FireIntervalMs | 16 | 连锁 dig 间隔（毫秒）。DRG 地形约每帧提交一笔；崩得慢调小（8），卡顿调大（32） |
-| TraceTerrainOp | true | 记录前 8 次 TerrainOp_PickAxe 参数 |
-| TraceSpline | true | 记录 TerrainOp_CarveSplineSegment 参数（Spline 模式排查） |
-| TraceFires | true | 记录每次连锁 dig / 模拟音效位置（排查用，正常后可关） |
+| FireIntervalMs | 16 | 连锁挖掘间隔（毫秒）：卡顿调大，太慢调小 |
 
 ## 日志
 `chainmine.log`（mod 目录，每次启动清空）。预期（Dig 模式）：
 ```
 dig: Server_DigBlock ready (carvePos=0 carveDir=12 mat=24 special=28)
-hook: TerrainOp_PickAxe trace registered
 hook: Raycast ready (start=0 dir=12 dist=24 hitInfo=28 filter=56 ret=57 hitMat=24)
 hook: IsPointInsideTerrain ready (pos=0 ret=12)
 hook: RemoveDebrisInSphere ready (pos=0 radius=12 fragile=16 durable=17 type=18)
-hook: All_SimulateDigBlock registered (pos=0 mat=16)
 hook: spline carve ready (param=0 opNum=0 segs=8 mat=24 filter=32 precious=33)
 chain: all hooks ready (raycast=1)
 probe: mat=203 cells=250 visited=158 skipped=93 step=45.0 maxDist=1200.0
 chain: enqueue ore=TM_Nitra idx=203 cells=250 digs=16 queue=16
-chain: fire 1/16 pos=(608.4,-1599.1,593.2) mat=203
-...
-chain: done fired=16 sim=16
+chain: done fired=16
 ```
 - 正常表现：`probe:` 的 cells 数量应接近矿脉体积/步长³（含半步长加密点）；`digs` 明显
-  小于 cells；`chain: fire N/M` 每 `FireIntervalMs` 一条，游戏里整脉 1 秒内崩完。
+  小于 cells；整脉在约 1 秒内逐帧崩完。
 - 连续挥镐时 `chain: enqueue ... digs=N queue=M merged`：新挖点合并进进行中的队列
   （`digs` 是本次新增数、`queue` 是队列总数），连锁不会被清空打断。
 - `probe: cells=0`：命中点探测失败（射线没找到矿脉边界）——看 `ProbeRayDist` 是否太小
   （< 矿脉半径），或 `RaycastFilter` 是否被改成非 Diggable。
 - `chain: enqueue ... digs=0`：`DigRadius` 太小或矿脉超出 `MaxDistance`，调回默认。
-- Spline 模式看 `spline: enqueue ... radius=... len=...` 与
-  `splineop: TerrainOp_CarveSplineSegment op=... segs=1 radius=... filter=0 precious=0`
-  （filter=0 ReplaceAll、precious=0 TurnIntoGems 表示参数正确到达游戏 op）。
-  若地形没变化：把日志发我，重点看 splineop 行与后续是否崩。
+- Spline 模式看 `spline: enqueue ... radius=... len=...` 与 `spline: fired ...`。
+  若地形没变化：把日志发我。
 
 ## 编译
 ```bat

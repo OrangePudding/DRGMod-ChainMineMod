@@ -105,8 +105,6 @@ namespace RC
 // 可靠性/性能：
 //   - 全部 UE 反射与配置热重载在游戏线程（ProcessEvent pre-callback）。
 //   - 所有 hook 体 SEH 包裹；BFS/入队只在挥镐时执行，队列空时 tick 回调零开销。
-//   - 诊断：TerrainOp_PickAxe / TerrainOp_CarveSplineSegment 参数 trace +
-//     All_SimulateDigBlock 计数（TraceFires / TraceTerrainOp 可关）。
 // =====================================================================
 namespace ChainMine
 {
@@ -150,10 +148,7 @@ namespace ChainMine
     static double g_cfg_dig_radius = 115.0;      // pickaxe DigSize (UE cm; crater is a voxelized cube, half-width = DigSize/2)
     static double g_cfg_tube_margin = 60.0;      // spline: extra radius/length beyond vein extent (UE cm)
     static double g_cfg_max_spline_radius = 220.0; // spline safety cap: fitted tube radius upper bound (UE cm)
-    static bool g_cfg_trace_spline = true;    // log TerrainOp_CarveSplineSegment params (debug)
-    static bool g_cfg_trace_op = true;         // log first few TerrainOp_PickAxe calls
     static int32_t g_cfg_fire_interval_ms = 16;// min ms between deferred chain digs
-    static bool g_cfg_trace_fires = true;      // log each deferred dig / sim (debug)
     static ULONGLONG g_cfg_check_tick = 0;
     static bool g_cfg_had_file = false;
     static uint64_t g_cfg_last_write = 0;
@@ -165,7 +160,7 @@ namespace ChainMine
     static int32_t g_offTerrainMaterial = -1;
     static int32_t g_offIsSpecial = -1;
 
-    static UFunction* g_fnTerrainOpPickAxe = nullptr;   // used for trace hook only
+    static UFunction* g_fnTerrainOpPickAxe = nullptr;   // pre-hook tracks OperationNumber for spline numbering
     static UFunction* g_fnRaycast = nullptr;
 
     static UClass* g_csgClass = nullptr;             // /Script/FSD.DeepCSGWorld
@@ -195,11 +190,9 @@ namespace ChainMine
     static int32_t g_offSegEndTan = -1;              // SplineEndTangent
     static int32_t g_offSegRadius = -1;              // Radius
     static bool g_splineReady = false;
-    static CallbackId g_splineTraceHookId = 0;
     static bool g_triedSplineFn = false;
     static int32_t g_lastOpNumber = 0;               // last OperationNumber seen on TerrainOp_PickAxe
     static int32_t g_splineFireCount = 0;
-    static int32_t g_splineTraceCount = 0;
 
     struct SplinePlan
     {
@@ -249,7 +242,7 @@ namespace ChainMine
     static int32_t g_offDebrisType = -1;
     static bool g_debrisReady = false;
 
-    static CallbackId g_opTraceHookId = 0;
+    static CallbackId g_opNumHookId = 0;
     static bool g_ready = false;
     static bool g_raycastReady = false;
     static bool g_warnedNoCsg = false;
@@ -262,9 +255,6 @@ namespace ChainMine
     // lazily cached DeepCSGWorld actor per world
     static AActor* g_csgActor = nullptr;
     static UWorld* g_cachedWorld = nullptr;
-
-    // trace counter for TerrainOp_PickAxe diagnostics
-    static int32_t g_opTraceCount = 0;
 
     // ---- deferred dig queue (fires ~1 dig per frame, see DrainChainQueue) ----
     struct PendingDig
@@ -279,14 +269,6 @@ namespace ChainMine
     static size_t g_pendingHead = 0;
     static uint64_t g_lastFireTick = 0;
     static int32_t g_firedTotal = 0;
-    static uint64_t g_simDigCount = 0;
-
-    // All_SimulateDigBlock hook (diagnostics: count/position of every dig sim)
-    static UFunction* g_fnSimDig = nullptr;
-    static int32_t g_offSimPos = -1;
-    static int32_t g_offSimMaterial = -1;
-    static CallbackId g_simHookId = 0;
-    static bool g_triedSimFn = false;
 
     static void Log(const wchar_t* fmt, ...);
     static int32_t FindPropOffset(UStruct* s, const wchar_t* name);
@@ -373,58 +355,46 @@ namespace ChainMine
     {
         const wchar_t* txt =
             L"# Sakura_CPP_ChainMine config (UTF-8)\n"
-            L"# 保存后约 1 秒内生效，无需重启游戏。键名不区分大小写，# 开头为注释。\n"
+            L"# 保存后约 1 秒生效，无需重启游戏。# 开头为注释。\n"
             L"\n"
             L"# 总开关\n"
             L"Enabled = true\n"
             L"\n"
-            L"# 模式：Dig = 探测整条矿脉后按最优挖点逐帧崩（默认，可靠）；\n"
-            L"# Spline = 实验：沿矿脉主轴发一条雕刻样条一次刻空（性能最优，宝石/浮岛未验证）\n"
+            L"# 模式：Dig = 逐帧挖空整条矿脉（默认）；Spline = 一条样条一次刻空（实验）\n"
             L"Mode = Dig\n"
             L"\n"
-            L"# 探测网格步长（UE 厘米，1米=100；0.45米=45）。越小越密，覆盖越全、射线越多\n"
+            L"# 探测网格步长（厘米，45=0.45米），越小覆盖越全\n"
             L"VeinStep = 45\n"
             L"\n"
-            L"# 单次挥镐最多探测到的矿脉细胞数（0=关闭连锁；大矿脉/黄金潮可以调高）\n"
+            L"# 单次挥镐最多探测的矿脉格数（0=关闭连锁）\n"
             L"MaxNodes = 250\n"
             L"\n"
-            L"# 距命中点的最大连锁距离（UE 厘米，1米=100；12米=1200）\n"
+            L"# 距命中点的最大连锁距离（厘米，1200=12米）\n"
             L"MaxDistance = 1200\n"
             L"\n"
-            L"# 探测射线长度（UE 厘米）：从候选格向外找矿脉边界，需大于矿脉半径\n"
+            L"# 探测射线长度（厘米），需大于矿脉半径\n"
             L"ProbeRayDist = 350\n"
             L"\n"
-            L"# Dig 模式：镐洞尺寸（UE 厘米，游戏默认 DigSize=115；实际坑是体素化方块）\n"
+            L"# 镐洞尺寸（厘米），游戏默认 115\n"
             L"DigRadius = 115\n"
             L"\n"
-            L"# Spline 模式：样条半径/长度在矿脉范围外再多留的余量（UE 厘米）\n"
+            L"# Spline 模式：样条超出矿脉的余量（厘米）\n"
             L"TubeMargin = 60\n"
             L"\n"
-            L"# Spline 模式：样条半径上限（UE 厘米），防止探测异常时挖出超大洞\n"
+            L"# Spline 模式：样条半径上限（厘米），防止挖出超大洞\n"
             L"MaxSplineRadius = 220\n"
             L"\n"
             L"# 重击（Power Attack）是否也触发连锁\n"
             L"AlsoSpecial = true\n"
             L"\n"
-            L"# 去别人房里（客机）是否也连锁：默认 false（主机侧效果已覆盖全队；\n"
-            L"# 客机连锁需要反复发送 Server_DigBlock RPC，且 Spline 模式在客机不工作，仅 Dig）\n"
+            L"# 进别人房（客机）是否也连锁，仅 Dig 模式\n"
             L"EnableAsClient = false\n"
             L"\n"
-            L"# Raycast 过滤器：0=Any 1=Empty 2=Filled 3=Diggable(默认) 4=NotDiggable\n"
+            L"# 射线过滤器：0=Any 1=Empty 2=Filled 3=Diggable 4=NotDiggable\n"
             L"RaycastFilter = 3\n"
             L"\n"
-            L"# 记录前几次 TerrainOp_PickAxe 调用的参数（对照游戏自身挖矿，排查用）\n"
-            L"TraceTerrainOp = true\n"
-            L"\n"
-            L"# 记录 TerrainOp_CarveSplineSegment 参数（Spline 模式排查用）\n"
-            L"TraceSpline = true\n"
-            L"\n"
-            L"# 连锁 dig 间隔（毫秒）。DRG 地形约每帧提交一笔，默认 16ms≈60点/秒；\n"
-            L"# 崩得太慢就调小（如 8），不生效/卡顿就调大（如 32）\n"
-            L"FireIntervalMs = 16\n"
-            L"\n"
-            L"# 记录每次连锁 dig / 模拟音效的位置（排查用，量大，正常后可关）\n"
-            L"TraceFires = true\n";
+            L"# 连锁挖掘间隔（毫秒）：卡顿调大，太慢调小\n"
+            L"FireIntervalMs = 16\n";
         std::wstring ws = txt;
         std::string utf8 = WideToUtf8(ws);
         FILE* f = nullptr;
@@ -478,10 +448,7 @@ namespace ChainMine
             else if (_wcsicmp(key.c_str(), L"AlsoSpecial") == 0) g_cfg_also_special = ParseBoolValue(val, g_cfg_also_special);
             else if (_wcsicmp(key.c_str(), L"EnableAsClient") == 0) g_cfg_enable_as_client = ParseBoolValue(val, g_cfg_enable_as_client);
             else if (_wcsicmp(key.c_str(), L"RaycastFilter") == 0) g_cfg_raycast_filter = _wtoi(val.c_str());
-            else if (_wcsicmp(key.c_str(), L"TraceTerrainOp") == 0) g_cfg_trace_op = ParseBoolValue(val, g_cfg_trace_op);
             else if (_wcsicmp(key.c_str(), L"FireIntervalMs") == 0) g_cfg_fire_interval_ms = _wtoi(val.c_str());
-            else if (_wcsicmp(key.c_str(), L"TraceFires") == 0) g_cfg_trace_fires = ParseBoolValue(val, g_cfg_trace_fires);
-            else if (_wcsicmp(key.c_str(), L"TraceSpline") == 0) g_cfg_trace_spline = ParseBoolValue(val, g_cfg_trace_spline);
         }
         Log(L"config: mode=%ls enabled=%d step=%.1f maxCells=%d maxDist=%.1f probeRay=%.0f digRadius=%.0f margin=%.0f maxSplineR=%.0f special=%d client=%d fireMs=%d",
             g_cfg_mode == 1 ? L"Spline" : L"Dig", g_cfg_enabled ? 1 : 0, g_cfg_vein_step, g_cfg_max_nodes,
@@ -522,7 +489,6 @@ namespace ChainMine
         g_fnLocals = (uint8_t*& (*)(void*))GetProcAddress(g_ue4ss, "?Locals@FFrame@Unreal@RC@@QEAAAEAPEAEXZ");
         g_fnGetNext = (FField*& (*)(void*))GetProcAddress(g_ue4ss, "?GetNext@FField@Unreal@RC@@AEAAAEAPEAV123@XZ");
         g_procsResolved = true;
-        Log(L"proc: Locals=%p GetNext=%p", (void*)g_fnLocals, (void*)g_fnGetNext);
     }
 
     static int32_t FindPropOffset(UStruct* s, const wchar_t* name)
@@ -543,9 +509,7 @@ namespace ChainMine
     }
 
     static void OnDigDetect(UObject* Context, UFunction* Function, void* Parms);
-    static void OnTerrainOpTrace(UnrealScriptFunctionCallableContext& ctx, void*);
-    static void OnSimDigBlock(UnrealScriptFunctionCallableContext& ctx, void*);
-    static void OnSplineOpTrace(UnrealScriptFunctionCallableContext& ctx, void*);
+    static void OnTerrainOpPickaxe(UnrealScriptFunctionCallableContext& ctx, void*);
     static void ClearPendingQueue();
     static bool EnqueueDig(AActor* pickaxe, const RawFVector& pos, const RawFVector& dir, int32_t mat, bool special, float dedupR);
 
@@ -597,10 +561,9 @@ namespace ChainMine
         {
             g_triedOpFn = true;
             g_fnTerrainOpPickAxe = UObjectGlobals::StaticFindObject<UFunction*>(nullptr, nullptr, L"/Script/FSD.DeepCSGWorld:TerrainOp_PickAxe");
-            if (g_fnTerrainOpPickAxe && !g_opTraceHookId)
+            if (g_fnTerrainOpPickAxe && !g_opNumHookId)
             {
-                g_opTraceHookId = g_fnTerrainOpPickAxe->RegisterPreHook(OnTerrainOpTrace);
-                Log(L"hook: TerrainOp_PickAxe trace registered");
+                g_opNumHookId = g_fnTerrainOpPickAxe->RegisterPreHook(OnTerrainOpPickaxe);
             }
             if (!g_fnTerrainOpPickAxe) g_triedOpFn = false;
         }
@@ -694,23 +657,6 @@ namespace ChainMine
             }
         }
 
-        if (!g_triedSimFn)
-        {
-            g_triedSimFn = true;
-            g_fnSimDig = UObjectGlobals::StaticFindObject<UFunction*>(nullptr, nullptr, L"/Script/FSD.PickaxeItem:All_SimulateDigBlock");
-            if (g_fnSimDig)
-            {
-                g_offSimPos = FindPropOffset(g_fnSimDig, L"Position");
-                g_offSimMaterial = FindPropOffset(g_fnSimDig, L"Material");
-                if (g_offSimPos >= 0 && !g_simHookId)
-                {
-                    g_simHookId = g_fnSimDig->RegisterPreHook(OnSimDigBlock);
-                    Log(L"hook: All_SimulateDigBlock registered (pos=%d mat=%d)", g_offSimPos, g_offSimMaterial);
-                }
-            }
-            if (!g_fnSimDig || g_offSimPos < 0) g_triedSimFn = false;
-        }
-
         if (!g_triedSplineFn)
         {
             g_triedSplineFn = true;
@@ -737,11 +683,6 @@ namespace ChainMine
                     g_offSegEndTan >= 0 && g_offSegRadius >= 0)
                 {
                     g_splineReady = true;
-                    if (!g_splineTraceHookId)
-                    {
-                        g_splineTraceHookId = g_fnSplineOp->RegisterPreHook(OnSplineOpTrace);
-                        Log(L"hook: TerrainOp_CarveSplineSegment trace registered");
-                    }
                     Log(L"hook: spline carve ready (param=%d opNum=%d segs=%d mat=%d filter=%d precious=%d)",
                         g_offSplineParam, g_offSplineOpNum, g_offSplineSegs, g_offSplineMat,
                         g_offSplineFilter, g_offSplinePrecious);
@@ -1622,46 +1563,14 @@ namespace ChainMine
         ChainGuard guard;
         if (d.pickaxe && d.pickaxe->GetWorld() == g_cachedWorld)
         {
-            if (g_cfg_trace_fires)
-            {
-                Log(L"chain: fire %d/%d pos=(%.1f,%.1f,%.1f) mat=%d",
-                    (int32_t)g_pendingHead, (int32_t)g_pendingDigs.size(), d.pos.X, d.pos.Y, d.pos.Z, d.mat);
-            }
             ChainDigAt(d.pickaxe, d.pos, d.dir, d.mat, d.special);
             ++g_firedTotal;
         }
         g_lastFireTick = GetTickCount64();
         if (g_pendingHead >= g_pendingDigs.size())
         {
-            Log(L"chain: done fired=%d sim=%llu", g_firedTotal, (unsigned long long)g_simDigCount);
+            Log(L"chain: done fired=%d", g_firedTotal);
             ClearPendingQueue();
-        }
-    }
-
-    // Diagnostics: every dig (manual or chain) lands in All_SimulateDigBlock
-    // (NetMulticast sound/particles). Count them to confirm each deferred dig
-    // actually replicated instead of being dropped.
-    static void OnSimDigBlockImpl(UnrealScriptFunctionCallableContext& ctx)
-    {
-        if (g_offSimPos < 0) return;
-        if (!g_fnLocals) return;
-        uint8_t*& localsRef = g_fnLocals(&ctx.TheStack);
-        uint8_t* parms = localsRef;
-        if (!parms) return;
-        ++g_simDigCount;
-        if (!g_cfg_trace_fires || g_simDigCount > 16) return;
-        RawFVector p = *(RawFVector*)(parms + g_offSimPos);
-        int32_t m = g_offSimMaterial >= 0 ? *(int32_t*)(parms + g_offSimMaterial) : -1;
-        Log(L"sim: All_SimulateDigBlock #%llu pos=(%.1f,%.1f,%.1f) mat=%d",
-            (unsigned long long)g_simDigCount, p.X, p.Y, p.Z, m);
-    }
-
-    static void OnSimDigBlock(UnrealScriptFunctionCallableContext& ctx, void*)
-    {
-        __try { OnSimDigBlockImpl(ctx); }
-        __except (EXCEPTION_EXECUTE_HANDLER)
-        {
-            Log(L"hook: All_SimulateDigBlock exception 0x%08X", GetExceptionCode());
         }
     }
 
@@ -1714,10 +1623,10 @@ namespace ChainMine
     }
 
     // =====================================================================
-    // TerrainOp_PickAxe trace (diagnostics): log the first few calls with the
-    // exact OperationNumber/DigSize/Miner the game (or our chain) passes.
+    // TerrainOp_PickAxe pre-hook: track the latest OperationNumber so spline
+    // carves number their ops above every dig the game has committed.
     // =====================================================================
-    static void OnTerrainOpTraceImpl(UnrealScriptFunctionCallableContext& ctx)
+    static void OnTerrainOpPickaxeImpl(UnrealScriptFunctionCallableContext& ctx)
     {
         if (!g_fnLocals) return;
         uint8_t*& localsRef = g_fnLocals(&ctx.TheStack);
@@ -1725,59 +1634,15 @@ namespace ChainMine
         if (!parms) return;
 
         int32_t opNum = *(int32_t*)(parms + 0x00);
-        if (opNum > g_lastOpNumber) g_lastOpNumber = opNum;  // always track for spline op numbering
-        if (!g_cfg_trace_op || g_opTraceCount >= 8) return;
-        float hitX = *(float*)(parms + 0x04);
-        float hitY = *(float*)(parms + 0x08);
-        float hitZ = *(float*)(parms + 0x0C);
-        float digSize = *(float*)(parms + 0x1C);
-        AActor* miner = *(AActor**)(parms + 0x20);
-        std::wstring minerName = miner ? miner->GetName() : L"<null>";
-        ++g_opTraceCount;
-        Log(L"trace: TerrainOp_PickAxe op=%d pos=(%.1f,%.1f,%.1f) size=%.1f miner=%ls",
-            opNum, hitX, hitY, hitZ, digSize, minerName.c_str());
+        if (opNum > g_lastOpNumber) g_lastOpNumber = opNum;
     }
 
-    static void OnTerrainOpTrace(UnrealScriptFunctionCallableContext& ctx, void*)
+    static void OnTerrainOpPickaxe(UnrealScriptFunctionCallableContext& ctx, void*)
     {
-        __try { OnTerrainOpTraceImpl(ctx); }
+        __try { OnTerrainOpPickaxeImpl(ctx); }
         __except (EXCEPTION_EXECUTE_HANDLER)
         {
-            Log(L"hook: TerrainOp_PickAxe trace exception 0x%08X", GetExceptionCode());
-        }
-    }
-
-    // TerrainOp_CarveSplineSegment trace (diagnostics): confirm our (or the
-    // game's) spline carve actually reaches the terrain op with sane params.
-    static void OnSplineOpTraceImpl(UnrealScriptFunctionCallableContext& ctx)
-    {
-        if (!g_cfg_trace_spline || g_splineTraceCount >= 8) return;
-        if (!g_fnLocals) return;
-        uint8_t*& localsRef = g_fnLocals(&ctx.TheStack);
-        uint8_t* parms = localsRef;
-        if (!parms) return;
-        int32_t base = g_offSplineParam >= 0 ? g_offSplineParam : 0;
-        if (g_offSplineOpNum < 0 || g_offSplineSegs < 0) return;
-        int32_t opNum = *(int32_t*)(parms + base + g_offSplineOpNum);
-        RawTArray* segs = (RawTArray*)(parms + base + g_offSplineSegs);
-        float radius = 0.0f;
-        if (segs && segs->Num > 0 && segs->Data && g_offSegRadius >= 0)
-        {
-            radius = *(float*)((uint8_t*)segs->Data + g_offSegRadius);
-        }
-        uint8_t filter = g_offSplineFilter >= 0 ? *(uint8_t*)(parms + base + g_offSplineFilter) : 0xFF;
-        uint8_t precious = g_offSplinePrecious >= 0 ? *(uint8_t*)(parms + base + g_offSplinePrecious) : 0xFF;
-        ++g_splineTraceCount;
-        Log(L"splineop: TerrainOp_CarveSplineSegment op=%d segs=%d radius=%.1f filter=%d precious=%d",
-            opNum, segs ? segs->Num : 0, radius, (int)filter, (int)precious);
-    }
-
-    static void OnSplineOpTrace(UnrealScriptFunctionCallableContext& ctx, void*)
-    {
-        __try { OnSplineOpTraceImpl(ctx); }
-        __except (EXCEPTION_EXECUTE_HANDLER)
-        {
-            Log(L"hook: TerrainOp_CarveSplineSegment trace exception 0x%08X", GetExceptionCode());
+            Log(L"hook: TerrainOp_PickAxe exception 0x%08X", GetExceptionCode());
         }
     }
     // =====================================================================
@@ -1834,20 +1699,10 @@ namespace ChainMine
         ~MyMod() override
         {
             Log(L"mod destroyed, unregistering hooks");
-            if (g_opTraceHookId && g_fnTerrainOpPickAxe)
+            if (g_opNumHookId && g_fnTerrainOpPickAxe)
             {
-                g_fnTerrainOpPickAxe->UnregisterHook(g_opTraceHookId);
-                g_opTraceHookId = 0;
-            }
-            if (g_simHookId && g_fnSimDig)
-            {
-                g_fnSimDig->UnregisterHook(g_simHookId);
-                g_simHookId = 0;
-            }
-            if (g_splineTraceHookId && g_fnSplineOp)
-            {
-                g_fnSplineOp->UnregisterHook(g_splineTraceHookId);
-                g_splineTraceHookId = 0;
+                g_fnTerrainOpPickAxe->UnregisterHook(g_opNumHookId);
+                g_opNumHookId = 0;
             }
             ClearPendingQueue();
         }

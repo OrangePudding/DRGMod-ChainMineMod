@@ -1,53 +1,41 @@
 # Sakura_CPP_ChainMine config (UTF-8)
-# 保存后约 1 秒内生效，无需重启游戏。键名不区分大小写，# 开头为注释。
+# 保存后约 1 秒生效，无需重启游戏。# 开头为注释。
 
 # 总开关
 Enabled = true
 
-# 模式：Dig = 探测整条矿脉后按最优挖点逐帧崩（默认，可靠）；
-# Spline = 实验：沿矿脉主轴发一条雕刻样条一次刻空（性能最优，宝石/浮岛未验证）
+# 模式：Dig = 逐帧挖空整条矿脉（默认）；Spline = 一条样条一次刻空（实验）
 Mode = Dig
 
-# 探测网格步长（UE 厘米，1米=100；0.45米=45）。越小越密，覆盖越全、射线越多
+# 探测网格步长（厘米，45=0.45米），越小覆盖越全
 VeinStep = 45
 
-# 单次挥镐最多探测到的矿脉细胞数（0=关闭连锁；大矿脉/黄金潮可以调高）
+# 单次挥镐最多探测的矿脉格数（0=关闭连锁）
 MaxNodes = 250
 
-# 距命中点的最大连锁距离（UE 厘米，1米=100；12米=1200）
+# 距命中点的最大连锁距离（厘米，1200=12米）
 MaxDistance = 1200
 
-# 探测射线长度（UE 厘米）：从候选格向外找矿脉边界，需大于矿脉半径
+# 探测射线长度（厘米），需大于矿脉半径
 ProbeRayDist = 350
 
-# Dig 模式：镐洞尺寸（UE 厘米，游戏默认 DigSize=115；实际坑是体素化方块，
-# 覆盖判定按 half=DigRadius/2 的满尺寸盒子算）
+# 镐洞尺寸（厘米），游戏默认 115
 DigRadius = 115
 
-# Spline 模式：样条半径/长度在矿脉范围外再多留的余量（UE 厘米）
+# Spline 模式：样条超出矿脉的余量（厘米）
 TubeMargin = 60
 
-# Spline 模式：样条半径上限（UE 厘米），防止探测异常时挖出超大洞
+# Spline 模式：样条半径上限（厘米），防止挖出超大洞
 MaxSplineRadius = 220
 
 # 重击（Power Attack）是否也触发连锁
 AlsoSpecial = true
 
-# 去别人房里（客机）是否也连锁：默认 false（主机侧效果已覆盖全队；客机仅 Dig 可用）
+# 进别人房（客机）是否也连锁，仅 Dig 模式
 EnableAsClient = false
 
-# Raycast 过滤器：0=Any 1=Empty 2=Filled 3=Diggable(默认) 4=NotDiggable
+# 射线过滤器：0=Any 1=Empty 2=Filled 3=Diggable 4=NotDiggable
 RaycastFilter = 3
 
-# 记录前几次 TerrainOp_PickAxe 调用的参数（对照游戏自身挖矿，排查用）
-TraceTerrainOp = true
-
-# 记录 TerrainOp_CarveSplineSegment 参数（Spline 模式排查用）
-TraceSpline = true
-
-# 连锁 dig 间隔（毫秒）。DRG 地形约每帧提交一笔，默认 16ms≈60点/秒；
-# 崩得太慢就调小（如 8），不生效/卡顿就调大（如 32）
+# 连锁挖掘间隔（毫秒）：卡顿调大，太慢调小
 FireIntervalMs = 16
-
-# 记录每次连锁 dig / 模拟音效的位置（排查用，量大，正常后可关）
-TraceFires = true
