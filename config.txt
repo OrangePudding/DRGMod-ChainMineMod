@@ -32,7 +32,7 @@ MaxSplineRadius = 220
 AlsoSpecial = true
 
 # 进别人房（客机）是否也连锁，仅 Dig 模式
-EnableAsClient = true
+EnableAsClient = false
 
 # 射线过滤器：0=Any 1=Empty 2=Filled 3=Diggable 4=NotDiggable
 RaycastFilter = 3

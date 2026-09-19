@@ -46,9 +46,9 @@ DRG 的地形坐标/半径是 **UE 默认厘米制**（1米=100）。实测镐�
 ## 多人行为
 - **别人来你房（你是主机/单机）**：连锁逻辑全在主机侧执行（谁挥镐都走 `Server_DigBlock`
   → 主机钩子），所以**全队都享受效果**，客机不用装任何东西；Dig 和 Spline 模式都生效。
-- **你去别人房（你是客机）**：默认开启（`EnableAsClient=true`）——客机会本地探测并反复
-  发送 `Server_DigBlock` RPC（Dig 模式），Spline 模式是 NetMulticast、只能在主机调用，
-  客机自动退回 Dig；不想要连锁就改成 `false`，即恢复正常挖矿。
+- **你去别人房（你是客机）**：默认关闭（`EnableAsClient=false`），就是正常挖矿；想要也连锁
+  就改成 `true`——客机会本地探测并反复发送 `Server_DigBlock` RPC（Dig 模式），
+  Spline 模式是 NetMulticast、只能在主机调用，客机自动退回 Dig。
 - 注意：UE4SS 注入属于 modded 客户端，是否能进别人房还取决于对方房间的 mod 状态设置。
 
 ## 安装
@@ -71,7 +71,7 @@ DRG 的地形坐标/半径是 **UE 默认厘米制**（1米=100）。实测镐�
 | TubeMargin | 60 | Spline 模式样条余量（厘米） |
 | MaxSplineRadius | 220 | Spline 模式样条半径上限（厘米），防止挖出超大洞 |
 | AlsoSpecial | true | 重击（Power Attack）是否也触发连锁 |
-| EnableAsClient | true | 进别人房（客机）是否也连锁；仅 Dig 模式 |
+| EnableAsClient | false | 进别人房（客机）是否也连锁；仅 Dig 模式 |
 | RaycastFilter | 3 | 0 Any / 1 Empty / 2 Filled / 3 Diggable / 4 NotDiggable |
 | FireIntervalMs | 32 | 连锁挖掘间隔（毫秒）：卡顿调大，太慢调小 |
 

@@ -142,7 +142,7 @@ namespace ChainMine
     static int32_t g_cfg_max_nodes = 2000;     // max probed vein cells per swing (also key MaxNodes)
     static double g_cfg_max_distance = 3000.0; // max distance from hit point (UE cm; 3000 = 30 m)
     static bool g_cfg_also_special = true;     // chain also on power attacks
-    static bool g_cfg_enable_as_client = true; // allow chaining while joining someone else's game (Dig only)
+    static bool g_cfg_enable_as_client = false;// allow chaining while joining someone else's game (Dig only)
     static int32_t g_cfg_raycast_filter = 3;   // ELandscapeCellFilter: 0 Any 1 Empty 2 Filled 3 Diggable ...
     static double g_cfg_probe_ray_dist = 350.0;  // probe ray length (UE cm; must exceed vein half-thickness)
     static double g_cfg_dig_radius = 115.0;      // pickaxe DigSize (UE cm; crater is a voxelized cube, half-width = DigSize/2)
@@ -388,7 +388,7 @@ namespace ChainMine
             L"AlsoSpecial = true\n"
             L"\n"
             L"# 进别人房（客机）是否也连锁，仅 Dig 模式\n"
-            L"EnableAsClient = true\n"
+            L"EnableAsClient = false\n"
             L"\n"
             L"# 射线过滤器：0=Any 1=Empty 2=Filled 3=Diggable 4=NotDiggable\n"
             L"RaycastFilter = 3\n"
@@ -1382,7 +1382,7 @@ namespace ChainMine
         UWorld* world = ctx->GetWorld();
         if (!world) return;
 
-        // Client chaining (EnableAsClient, on by default) re-enters the
+        // Client chaining (EnableAsClient, off by default) re-enters the
         // Server_DigBlock RPC from the client, Dig mode only; Spline needs
         // authority and stays host-only.
         bool isAuthority = true;
